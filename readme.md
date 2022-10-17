@@ -20,10 +20,11 @@ Cluster conformational ensembles, output clustering results in .csv format, and 
     matplotlib 3.3.3
 
 ## Usage
-    Command line call
-    ```
-    python eval_and_cluster.py [-h] [-n N] [-s S] [-e E] [-ncfm N] [-i <filename>] [-o <filename>] [--cluster] [-clustermethod S] [--sidechain] [--split] [-splitthreshold DEG] [--show] [--stg]
-    ```
+Command line:
+
+```
+python eval_and_cluster.py [-h] [-n N] [-s S] [-e E] [-ncfm N] [-i <filename>] [-o <filename>] [--cluster] [-clustermethod S] [--sidechain] [--split] [-splitthreshold DEG] [--show] [--stg]
+```
 
 ## Parameter interpretation
 
