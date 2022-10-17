@@ -28,20 +28,20 @@ python eval_and_cluster.py [-h] [-n N] [-s S] [-e E] [-ncfm N] [-i <filename>] [
 
 ## Parameter interpretation
 
-    -h View help
-    -n The number of amino acids contained in the current polypeptide conformational ensemble.
-    -s The amino acid sequence of the current peptide, which is represented by a single capital letter abbreviation. For example, "glycine-alanine" dipeptide abbreviated as "VA".
-    -e Conformational energy truncation. Conformations with energies above this value will not be read and will not participate in subsequent calculations.
-    -ncfm   number truncation, that is, a fixed amount of data is selected by energy from low to high. When energy truncation is set, if the resulting ensemble size is less than this parameter, it will take no effect. The default is infinity.
-    -i .csv or .xls format of the peptide dihedral data file path.
-    -o Clustering result output file path. The default is the current directory. The file name is the input file followed by "_clusteropt".
-    --cluster Whether to perform conformational clustering algorithms. The default is not to proceed.
-    -clustermethod uses a conformational clustering algorithm with two options, "birch" and "kmeans", which defaults to "birch"
-    --sidechain Clustering algorithm whether to consider sidechain dihedral angles. The default is not considered.
-    --split         Whether to divide the two-sided angle of the main chain to correct the clustering result, by default.
-    -splitthreshold The division threshold used by the correction algorithm, 90° by default.
-    --show  Whether to visualize the clustering results. The default is not to proceed.
-    --stg Whether to draw a state density map, the default is not to draw.
+    -h      View help
+    -n      The number of amino acids contained in the current polypeptide conformational ensemble.
+    -s      The amino acid sequence of the current peptide, which is represented by a single capital letter abbreviation. For example, "glycine-alanine" dipeptide abbreviated as "VA".
+    -e      Conformational energy truncation. Conformations with energies above this value will not be read and will not participate in subsequent calculations.
+    -ncfm       number truncation, that is, a fixed amount of data is selected by energy from low to high. When energy truncation is set, if the resulting ensemble size is less than this parameter, it will take no effect. The default is infinity.
+    -i      .csv or .xls format of the peptide dihedral data file path.
+    -o      Clustering result output file path. The default is the current directory. The file name is the input file followed by "_clusteropt".
+    --cluster       Whether to perform conformational clustering algorithms. The default is not to proceed.
+    -clustermethod      uses a conformational clustering algorithm with two options, "birch" and "kmeans", which defaults to "birch"
+    --sidechain     Clustering algorithm whether to consider sidechain dihedral angles. The default is not considered.
+    --split     Whether to divide the two-sided angle of the main chain to correct the clustering result, by default.
+    -splitthreshold     The division threshold used by the correction algorithm, 90° by default.
+    --show      Whether to visualize the clustering results. The default is not to proceed.
+    --stg       Whether to draw a state density map, the default is not to draw.
 
 
 
