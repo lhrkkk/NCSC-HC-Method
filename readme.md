@@ -37,14 +37,14 @@ Cluster conformational ensembles, output clustering results in .csv format, and 
 
 ## Enter the file grid
 
-### XLS lattice
+### XLS format
 
 | Conformational file name | Conformational dihedral angles (°) separated by spaces | Conformational energy (kcal/mol) |
 |----------:|------------------------:|-----------------:|
 |  12345.xyz|   -180.0 45.0 90.0 135.0|             4.321|
 |  54321.xyz|   120.0 120.0 90.0 -45.0|             1.234|
 
-### csv lattice
+### csv format
     Conformation file name, space-separated conformational dihedral angle (°), conformational energy (kcal/mol).
     12345.xyz,-180.0 45.0 90.0 135.0,4.321
     54321.xyz,120.0 120.0 90.0 -45.0,1.234
