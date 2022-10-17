@@ -49,4 +49,7 @@ Cluster conformational ensembles, output clustering results in .csv format, and 
     12345.xyz,-180.0 45.0 90.0 135.0,4.321
     54321.xyz,120.0 120.0 90.0 -45.0,1.234
 
-# NCSC-HC-Method
+# Contributors:
+Fangning Ren, hclo1234@mail.ustc.edu.cn
+Haorui Lu, lhrkkk@mail.ustc.edu.cn
+
