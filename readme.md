@@ -51,5 +51,6 @@ Cluster conformational ensembles, output clustering results in .csv format, and 
 
 # Contributors:
 Fangning Ren, hclo1234@mail.ustc.edu.cn
+
 Haorui Lu, lhrkkk@mail.ustc.edu.cn
 
