@@ -1,16 +1,15 @@
 #coding=utf-8
 #!/usr/bin/env python3
-import random, argparse
+import random, argparse, time
 from collections import Counter
-try:
-    import xlrd
-except ImportError:
-    pass
+from sys import maxsize
+
 import numpy as np
-from math import exp, pi, log, sqrt, sin, cos, acos
+from math import pi, exp, log, sqrt, sin, cos, acos
 from matplotlib import pyplot as plt
-from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import (AgglomerativeClustering, KMeans)
 from sklearn.metrics.pairwise import euclidean_distances
+from sklearn.metrics import silhouette_score
 from sklearn.utils import check_array
 from sklearn.utils.extmath import row_norms,safe_sparse_dot
 from sklearn.manifold import TSNE
@@ -199,7 +198,7 @@ class Birch():
 
     def fit_try(self, X, y = None, thresholdlist = [0.5, ], branching_factor_list = [50, ], n_clusters_list = [3, ]):
         X = np.array(X)
-        stdresult = np.zeros((len(thresholdlist), len(branching_factor_list), len(n_clusters_list)))
+        schresult = np.zeros((len(thresholdlist), len(branching_factor_list), len(n_clusters_list)))
         for i, trs in enumerate(thresholdlist):
             for j, bf in enumerate(branching_factor_list):
                 self.threshold = trs
@@ -211,9 +210,10 @@ class Birch():
                     self.n_clusters = ncls
                     self._global_clustering(X)
                     std = self._cal_inertia(X, self.labels_)
-                    stdresult[i][j][k] = std
-                    print("cluster number: %d\tstandard deviation: %.3f" %(min(ncls, len(self.subcluster_centers_)), std))
-        return(stdresult)
+                    sch = silhouette_score(X, self.labels_)
+                    schresult[i][j][k] = sch
+                    print("cluster number: %d\tstandard deviation: %.3f\tsilhouette score:%.3f" %(min(ncls, len(self.subcluster_centers_)), std, sch))
+        return(schresult)
 
     def fit(self, X, y=None, global_cluster = True):
         threshold = self.threshold
@@ -322,6 +322,7 @@ class ClusterManifestor():
         for n in elist:
             n = int((n - emin) * mod)
             r, g, b = int(max(64, 255-2*n)), int(min(2*n, 511-2*n)), int(max(64, -255+2*n))
+            #r, g, b = int(max(64, -255+2*n)), int(min(2*n, 511-2*n)), int(max(64, 255-2*n))
             r, g, b = hex(r).replace('0x', ''), hex(g).replace('0x', ''), hex(b).replace('0x', '')
             if len(r) == 1:
                 r = '0' + r
@@ -440,7 +441,7 @@ def dimention_reduction_angle(data, sigma = 180, dimentionnumber = 0, weights = 
         dimentionnumber = len(data[0])
     def dw(a, b):
         ds = [min(abs(a[i] - b[i]), (360 - abs(a[i] - b[i]))) * weights[i] for i in range(len(a))]
-        return(sqrt(sum(d ** 2 for d in ds)))
+        return(sqrt(sum(d**2 for d in ds)))
     m = len(data)
     n = len(data[0])
     mat = np.zeros((m, m))
@@ -454,44 +455,35 @@ def dimention_reduction_angle(data, sigma = 180, dimentionnumber = 0, weights = 
 
     if method == 'tsne':
         try:
-            tsne = TSNE(n_components=dimentionnumber, init='pca', random_state=0, square_distances = True)
+            tsne = TSNE(n_components=dimentionnumber, random_state=0, square_distances = True)
         except TypeError: 
-            tsne = TSNE(n_components=dimentionnumber, init='pca', random_state=0)
+            tsne = TSNE(n_components=dimentionnumber, random_state=0)
         tsne.metric = 'precomputed'
         tsne.init = 'random'
         newdata = tsne.fit_transform(mat)
     else:
-        for i in range(0, m):
-            for j in range(i, m):
-                mat[i][j] = exp(-mat[i][j] / sigma2)
-                mat[j][i] = mat[i][j]
-        diag = [0 for i in range(m)]
-        sqrtdiag = [0 for i in range(m)]
-        for i in range(0, m):
-            for j in range(0, m):
-                diag[i] += mat[i][j]
-            sqrtdiag[i] = np.sqrt(max(diag[i], 0))
-        for i in range(0, m):
-            for j in range(0, m):
-                mat[i][j] /= -sqrtdiag[i] * sqrtdiag[j]
+        mat = np.exp(-mat/sigma2)
+        diag = np.sum(mat, axis = 1)
+        diag[diag<0] = 0
+        sqrtdiag = np.sqrt(diag)
+        mat = mat / np.outer(sqrtdiag, sqrtdiag)
         for i in range(0, m):
             mat[i][i] = 1
         npargs = np.linalg.eig(mat)
         nplams, npvics = npargs[0], npargs[1].T
         #生成的向量列表是一列一个向量，需要转置
-        vics = list(npvics)
         #取最小特征值的dm个向量的坐标作为新维度
         if dimentionnumber == 0:
             dimentionnumber = n
-        newdata = [[vics[j][i] for j in range(0, dimentionnumber)] for i in range(0, m)]
+        newdata = npvics[:dimentionnumber,:].T
     return(newdata)
 
-def angle_convert(a, wetinx):
+def angle_convert(a, weight):
     newdata = np.zeros((len(a), len(a[0]) * 2))
     for i in range(len(a)):
         for j in range(len(a[0])):
-            newdata[i][j*2] = cos(a[i][j] * pi / 180) * wetinx[j]
-            newdata[i][j*2+1] = sin(a[i][j] * pi / 180) * wetinx[j]
+            newdata[i][j*2] = cos(a[i][j] * pi / 180) * weight[j]
+            newdata[i][j*2+1] = sin(a[i][j] * pi / 180) * weight[j]
     return(newdata)
 
 def rearrange_clusters(data, labels, name = [], energy = []):
@@ -514,8 +506,7 @@ def rearrange_clusters(data, labels, name = [], energy = []):
         acdict[lb] = ac
     return(acdict)
 
-def opt_result(opt_path, dihdata, energy, names, labels):
-    acdict = rearrange_clusters(dihdata, labels, names, energy)
+def opt_result(opt_path,acdict):
     f = open(os.getcwd() + "\\" + opt_path, "w")
     for lb in acdict:
         ac = acdict[lb]
@@ -540,7 +531,7 @@ def opt_result(opt_path, dihdata, energy, names, labels):
             f.write("," + str(ac.energy[i]) + "\n")
     f.close()
 
-def check_seperate(dihs, lblk = 45):
+def check_seperate(dihs, lblk = 60):
     nblk = int(360 / lblk)
     ocplst = [0 for i in range(nblk)]
     for dih in dihs:
@@ -560,7 +551,39 @@ def check_seperate(dihs, lblk = 45):
         return(False)
     return(True)
 
-def fine_tune(dihdata0, labels, dihinxlist = [], weightlist = [], threshold = 30, iternumber = 5):
+def two_class_kmeans(data0, lblk = 90):
+    n = len(data0)
+    if n < 2:
+        return(np.zeros_like(data0, dtype = int))
+    data = sorted(data0) #从小到大顺序排列
+    gapcount = 0
+    gapstart1, gapend1 = 0, 0
+    gapstart2, gapend2 = 0, 0
+    for i in range(1, n+1):
+        dist = abs(data[i%n] - data[i-1])   #该值必然>0。连续的数据分布则不可能出现两个大间隔，只可能有一个大间隔甚至没有间隔
+        dist = min(dist, 360 - dist)
+        if dist > lblk:
+            if gapcount == 0:
+                gapstart1, gapend1 = i-1, i%n
+                gapcount += 1
+            elif gapcount == 1:
+                gapstart2, gapend2 = i-1, i%n
+                gapcount += 1
+                break
+    #print(data)
+    #print(gapstart1, gapstart2, gapend1, gapend2, gapcount)
+    if gapcount < 2:
+        return(np.zeros_like(data)) #不切割，返回全0标签
+    if gapstart2 < gapend2:     #第一个间隔必然不会跨越-180-180界限。只有可能是第二个间隔越界。此时不越界。
+        t1 = (data[gapstart1] + data[gapend1]) / 2
+        t2 = (data[gapstart2] + data[gapend2]) / 2
+        labels = np.array([1 if t1 < data0[j] < t2 else 0 for j in range(n)], dtype = int)
+    elif gapstart2 > gapend2:   #第二间隔跨越了-180，180界限。则第一间隔就将数据一分为二
+        t1 = (data[gapstart1] + data[gapend1]) / 2
+        labels = np.array([1 if data0[j] > t1 else 0 for j in range(n)], dtype = int)
+    return(labels)
+
+def fine_tune(dihdata0, labels, dihinxlist = [], weightlist = [], threshold = 90, iternumber = 5):
     if dihinxlist == []:
         dihinxlist = [i for i in range(len(dihdata0[0]))]
     if weightlist == []:
@@ -575,25 +598,11 @@ def fine_tune(dihdata0, labels, dihinxlist = [], weightlist = [], threshold = 30
             ac = acdict[lb]
             n = ac.n_data
             dihdata = ac.data.T
-            cmfcode = np.array([0 for i in range(n)])
-            for j in range(len(dihinxlist)):
-                dihinx = dihinxlist[j]
+            cmfcode = np.zeros(n, dtype = int)
+            for j, dihinx in enumerate(dihinxlist):
                 dihs = dihdata[dihinx]
-                cnt = [ac.data[ac.centerinx][dihinx], np.zeros(2)]
-                if not check_seperate(dihs, lblk = threshold // 2):
-                    continue
-                for it in range(iternumber):
-                    prevlbs = np.zeros(n, dtype = int)
-                    cnt[1] = np.zeros(2)
-                    for i, dih in enumerate(dihs):
-                        if min(abs(dih - cnt[0]), (360 - abs(dih - cnt[0]))) >= threshold:
-                            prevlbs[i] = 1
-                        else:
-                            cnt[1] += np.array([cos(dihs[0] / 180 * pi), sin(dihs[0] / 180 * pi)])
-                            cnt[0] = acos(cnt[1][0] / np.linalg.norm(cnt[1])) / pi * 180 * (-1 if cnt[1][1] < 0 else 1)
-                    if not np.sum(prevlbs):
-                        break
-                cmfcode += prevlbs * 2**j
+                prevlbs = two_class_kmeans(dihs, lblk = threshold)
+                cmfcode += (prevlbs * 2**j).astype(int)
             for i in range(n):
                 newlabels[ac.indexs[i]] += cmfcode[i]
         tmp, dic = list(set(newlabels)), {}
@@ -633,44 +642,118 @@ def elbow_method(ydata, xdata = [], show = False):
         cnums.append(xplt[mdks.index(dk)])
     return(cnums)
 
-def cluster_main(filepath, optpath = '', maxenergy = 4, dihindex = [], weight = [], show = True):
-    coldih, colenergy, colname = get_data(filepath = filepath, watershed = maxenergy, dihindex = dihindex, getname = True)
+def cluster_main(args, coldih, colenergy, colname, weight):
     n_cmf, n_dih = np.shape(coldih)
-    wetinx = weight + [1 for i in range(len(weight), n_dih)]
-    print("comformation number: %d" %(n_cmf))
-    newdata = angle_convert(coldih, wetinx)
+    newdata = angle_convert(coldih, weight)
     nclslist = [i for i in range(4, 20)]
-    birch = Birch(n_clusters = 2, threshold = 0.5, branching_factor=100)
-    stdresult = birch.fit_try(newdata, thresholdlist=[min(0.1 * sqrt(sum(wetinx)), 2)], n_clusters_list=nclslist)
-    result = stdresult[0][0]
-    ncls = elbow_method(result, nclslist, show=False)[0]
-    print("best cluster number: %d" %(ncls))
-    birch.n_clusters = ncls
-    birch.fit(newdata)
-    birch.labels_ = fine_tune(coldih, birch.labels_, dihinxlist = [0,1,2,3], threshold = 90, iternumber = 5)
-    print("split %d clusters into %d clusters by main dihedral angle range %d." %(ncls, len(list(set(birch.labels_))), int(180)))
-    if optpath == '':
-        optpath = filepath.replace(".", "_clusteropt.")
-    opt_result(optpath, coldih, colenergy, colname, list(birch.labels_))
-    print("cluster results output to file %s" %(optpath))
-    
-    if show:
+    t = time.time()
+    if args.clustermethod == "birch":
+        birch = Birch(n_clusters = 2, threshold = 0.5, branching_factor=3)
+        maxdistance = min(15*pi/180 * sqrt(sum(w**2 for w in weight)), sqrt(2))
+        schresult = birch.fit_try(newdata, thresholdlist=[maxdistance], n_clusters_list=nclslist)
+        result = list(schresult[0][0])
+        ncls = nclslist[result.index(max(result))]
+        print("best cluster number: %d" %(ncls))
+        birch.n_clusters = ncls
+        birch.fit(newdata)
+        clusterer = birch
+    else:
+        kmeans = KMeans(n_clusters=nclslist[0], tol = 0.001)
+        result = []
+        for ncls in nclslist:
+            kmeans.n_clusters = ncls
+            kmeans.fit_predict(newdata)
+            std = kmeans.inertia_ / len(newdata)
+            sch = silhouette_score(newdata, kmeans.labels_)
+            result.append(sch)
+            print("cluster number: %d\tstandard deviation: %.3f\tsilhouette score:%.3f" %(ncls, std, sch))
+        ncls = nclslist[result.index(max(result))]
+        print("best cluster number: %d" %(ncls))
+        kmeans.n_clusters = ncls
+        kmeans.fit(newdata)
+        clusterer = kmeans
+    sch = silhouette_score(newdata, clusterer.labels_)
+    t0 = time.time() - t
+    print("time cost %.3fs." %(time.time() - t))
+    if args.split:
+        maindihs = [i for i in range(args.n*2)]
+        clusterer.labels_ = fine_tune(coldih, clusterer.labels_, dihinxlist = maindihs, threshold = args.splitthreshold, iternumber = 5)
+        sch = silhouette_score(newdata, clusterer.labels_)
+        print("split %d clusters into %d clusters by main dihedral angle range %d." %(ncls, len(list(set(clusterer.labels_))), args.splitthreshold))
+        print("current silhouette score:%.3f" %(sch))
+
+    acdict = rearrange_clusters(coldih, list(clusterer.labels_), colname, colenergy)
+    opt_result(args.o, acdict)
+    print("cluster results output to file %s" %(args.o))
+    """
+    if args.show:
+        manifestor = ClusterManifestor()
+        plt.rcParams['font.sans-serif']=['SimHei']
+        plt.rcParams['axes.unicode_minus'] = False
+        fig = plt.figure(figsize = (3,3))
+        plt.axis("off")
+        ax_le = fig.add_subplot(1, 1, 1, title = args.s + " LE", xticks = [], yticks = [])
+        tmpinx = [i for i in range(n_cmf)]
+        random.shuffle(tmpinx)
+        tmpinx = tmpinx[0:300]
+        data_s, labels_s = [coldih[i] for i in tmpinx], [clusterer.labels_[i] for i in tmpinx]
+        reducteddata = dimention_reduction_angle(data_s, sigma = 30, dimentionnumber = 2, weights = weight, method = 'spectra')
+        manifestor.scatter_cluster(ax_le, reducteddata, labels_s)
+        plt.title(args.s)
+        plt.show()
+    """
+    #"""
+    if args.show:
         manifestor = ClusterManifestor()
         plt.rcParams['font.sans-serif']=['SimHei']
         plt.rcParams['axes.unicode_minus'] = False
         fig = plt.figure()
         plt.axis("off")
-        ax_le = fig.add_subplot(1, 2, 1, title = filepath, xticks = [], yticks = [])
-        ax_tsne = fig.add_subplot(1, 2, 2, title = filepath, xticks = [], yticks = [])
+        ax_le = fig.add_subplot(1, 2, 1, title = args.s + " LE", xticks = [], yticks = [])
+        ax_tsne = fig.add_subplot(1, 2, 2, title = args.s + " t-SNE", xticks = [], yticks = [])
         tmpinx = [i for i in range(n_cmf)]
         random.shuffle(tmpinx)
         tmpinx = tmpinx[0:300]
-        data_s, labels_s = [coldih[i] for i in tmpinx], [birch.labels_[i] for i in tmpinx]
-        reducteddata = dimention_reduction_angle(data_s, sigma = 30, dimentionnumber = 2, weights = wetinx, method = 'spectra')
+        data_s, labels_s = [coldih[i] for i in tmpinx], [clusterer.labels_[i] for i in tmpinx]
+        reducteddata = dimention_reduction_angle(data_s, sigma = 30, dimentionnumber = 2, weights = weight, method = 'spectra')
         manifestor.scatter_cluster(ax_le, reducteddata, labels_s)
-        reducteddata = dimention_reduction_angle(data_s, sigma = 30, dimentionnumber = 2, weights = wetinx, method = 'tsne')
+        reducteddata = dimention_reduction_angle(data_s, sigma = 30, dimentionnumber = 2, weights = weight, method = 'tsne')
         manifestor.scatter_cluster(ax_tsne, reducteddata, labels_s)
         plt.show()
+    #"""
+    return(acdict, t0, sch)
+
+#画角度分布图
+def draw_angle_distribute(acdict, dihindex = []):
+    fig = plt.figure(figsize=(21, 3))
+
+    ll = len(acdict)
+    axlist = [fig.add_subplot(2, ll//2, i+1) for i in range(ll)]
+    for ax in axlist:
+        ax.set_xticks([])
+        ax.set_yticks([])
+    ii = 0
+    d0 = np.linspace(-pi, pi, 360)
+    
+    for lb in acdict:
+        ac = acdict[lb]
+        ac:AngleCluster
+        data0 = ac.data.T
+        m, n = data0.shape
+        if dihindex == []:
+            dihindex = [i for i in range(m)]
+        for i in dihindex:
+            data = data0[i]
+            cos = np.cos(data / 180 * pi) * (i+1)
+            sin = np.sin(data / 180 * pi) * (i+1)
+            axlist[ii].scatter(cos, sin)
+            axlist[ii].plot(np.cos(d0) * (i+1), np.sin(d0) * (i+1))
+        lim = max(dihindex) + 2
+        axlist[ii].plot([-lim,0], [0,0], c = "black")
+        axlist[ii].axis((-lim, lim, -lim, lim))
+        ii += 1
+    plt.subplots_adjust(left = 0.06, bottom = 0.075, right = 0.99, top = 0.90, wspace = 0)
+    plt.show()
 
 #画态密度图
 def draw_state_density0(energylist, sigma = 0.5, interval = 0.1, emax = None, error = 1, sort = True, ax = None, xr = 0, filename = ''):
@@ -707,24 +790,26 @@ def draw_state_density0(energylist, sigma = 0.5, interval = 0.1, emax = None, er
 
 #评价方法
 def gini(n, m):
-    r = log(n / m, 10)
-    r1, r2, r3, r4, r5 = r, r**2, r**3, r**4, r**5
-    if r <= -2:
-        ag = 1
-    elif -2 < r <= -1:
-        ag = -0.1465 * r3 - 0.9867 * r2 - 2.1965 * r1 - 0.6151
-    elif -1 < r <= -0.5:
-        ag = -1.3997 * r3 - 3.2343 * r2 - 2.6766 * r1 - 0.0989
-    elif -0.5 < r <= 0:
-        ag = 0.2041 * r2 - 0.0401 * r1 + 0.5375
-    elif 0 < r <= 1.5:
-        ag = 0.2487 * r5 - 0.8159 * r4 + 0.5058 * r3 + 0.4660 * r2 - 0.0699 * r1 + 0.5413
-    else:
-        ag = 1
-    return(ag)
+    r = log(n / m)
+    r1, r2, r3 = r, r**2, r**3
+    if r <= -6:
+        return(0)
+    elif -6 < r <= -3:
+        return(2.7382 + 1.4941 * r1 + 0.2721 * r2 + 0.0165 * r3)
+    elif -3 < r <= -1.8:
+        return(2.1268 + 2.1559 * r1 + 0.8848 * r2 + 0.1246 * r3)
+    elif -1.8 < r <= -0.8:
+        return(0.8067 + 0.7546 * r1 + 0.5775 * r2 + 0.1607 * r3)
+    elif -0.8 < r <= 1.8:
+        return(0.5189 - 0.0025 * r1 - 0.0582 * r2 - 0.0103 * r3)
+    elif 1.8 < r <= 4.5:
+        return(1.4148 - 1.0654 * r1 + 0.2832 * r2 - 0.0258 * r3)
+    elif r > 4.5:
+        return(0)
 
-def GINI(data, mod = 10):
+def GINI(data, mod = 60):
     #N, M, n, m: 构象数，总格子数，占用格子数，数据维数
+    #该功能已从评价方法中移除，它不能客观反映构象的分布
     N, m = np.shape(data)
     M = (360 // mod) ** m
     blks = Counter()
@@ -737,10 +822,11 @@ def GINI(data, mod = 10):
     A0 = n * (vmax - vmin) / 2 + n * vmin
     A1 = sum(data[i] for i in range(n))
     agini = 1 if not A0 else min(A1 / A0, 1)
-    sgini = gini(N, M)
-    return(agini / sgini)
+    #sgini = gini(N, M)
+    sgini = 0
+    return(agini / (1-sgini))
 
-def NCSC(data, mod = 10):
+def NCSC(data, mod = 60):
     #N, M, n, m: 构象数，总格子数，占用格子数，数据维数
     N, m = np.shape(data)
     M = (360 // mod) ** m
@@ -749,7 +835,7 @@ def NCSC(data, mod = 10):
         tmp = tuple([data[i][j] // mod for j in range(m)])
         blks[tmp] += 1
     Eblk = M * (1 - (1 - 1 / M) ** N)
-    return(len(blks) / Eblk) 
+    return(len(blks), len(blks) / Eblk) 
 	#返回的是样本分布广度，样本占用格子数 / 同数量随机均匀分布样本占用格子数
 
 #读取csv或xls
@@ -758,24 +844,18 @@ def get_data(filepath, watershed = None, dihindex = [], getname = False):
     if not os.path.exists(path):
         print("file %s does not exist!" %(filepath))
         exit()
-    try:
-        workbook = xlrd.open_workbook(path)
-        sheet0 = workbook.sheet_by_index(0)
-        colenergy = sheet0.col_values(2)
-        coldih = sheet0.col_values(1)
-        colname = sheet0.col_values(0)
-    except Exception:
-        f = open(path, 'r')
-        lines = f.readlines()
-        f.close()
-        colenergy, coldih, colname = [], [], []
-        for i in range(10):
-            line = lines[i].strip("\n").split(",")
-        for line in lines:
-            line = line.strip("\n").split(",")
-            colenergy.append(line[2])
-            coldih.append(line[1])
-            colname.append(line[0])
+
+    f = open(path, 'r')
+    lines = f.readlines()
+    f.close()
+    colenergy, coldih, colname = [], [], []
+    for i in range(10):
+        line = lines[i].strip("\n").split(",")
+    for line in lines:
+        line = line.strip("\n").split(",")
+        colenergy.append(line[2])
+        coldih.append(line[1])
+        colname.append(line[0])
 
     L = len(coldih)
     for i in range(L):
@@ -804,31 +884,58 @@ def main(args):
     if args.n <= 0:
         print("please input the number of amino acids!")
         exit()
-    dihindex = [i for i in range(2 * args.n)]
-    weight = [i + 1 for i in range(args.n)] + [args.n - i for i in range(args.n)]
-
-    dihs, energys = get_data(args.i, watershed = args.e, dihindex = dihindex)
-    ncsc = NCSC(dihs, mod = 60)
-    gini = GINI(dihs, mod = 60)
-    print("AASQ: %s\nNCMF: %d\nNCSC: %.3f\nGINI: %.3f" %(args.s, len(dihs), ncsc, gini))
+    try:
+        dihs, energys, names = get_data(args.i, watershed = args.e, getname = True)
+    except Exception:
+        print("cannot read input file %s." %(args.i))
+        exit()
+    if args.ncfm > 0:
+        dihs, energys, names = dihs[:args.ncfm], energys[:args.ncfm], names[:args.ncfm]
+    maindihs = dihs[:,:2*args.n]
+    nblk_main, ncsc_main = NCSC(maindihs, mod = 60)
+    nblk_all, ncsc_all = NCSC(dihs, mod = 60)
+    #gini = GINI(dihs, mod = 60)
+    print("Amino acid sequence: \t%s" %(args.s))
+    print("Conformation number: \t%d" %(len(dihs)))
+    print("             Covered blocks number\tNormalized coverage")
+    print("main dihedral                 %4d                    %1.3f" %(nblk_main, ncsc_main))
+    print("all dihedral                  %4d                    %1.3f" %(nblk_all, ncsc_all))
+    
     if args.stg:
         draw_state_density0(energys, emax = args.e, filename = args.i)
     if args.cluster:
-        if args.sidechain:
-            dihindex = []
-        cluster_main(args.i, optpath = args.o, maxenergy = args.e, dihindex = dihindex, weight = weight, show = args.show)
-    
+        if not args.sidechain:
+            dihs = maindihs
+        if not args.o:
+            args.o = args.i.replace(".", "_clusteropt.")
+        n_cmf, n_dih = np.shape(dihs)
+        weight = [i + 1 for i in range(args.n)] + [args.n - i for i in range(args.n)]
+        weight = weight + [1 for i in range(len(weight), n_dih)]
+        print("dihedral weight:\t%s" %(" ".join(map(str, weight))))
+        acdict, t0, sch = cluster_main(
+                            args, dihs, energys, names, weight,
+                            )
+    #draw_angle_distribute(acdict, dihindex = [])
 
 if __name__ == "__main__":
+    random.seed(0)
     parser = argparse.ArgumentParser(description = "Comformation data evaluation and cluster program.")
-    parser.add_argument("-n", type = int, metavar = "N", help = "Number of amino acids", default = -1)
-    parser.add_argument("-s", type = str, metavar = "S", help = "Amino acid sequence", default = "Unknown")
-    parser.add_argument("-e", type = float, metavar = "E", help = "Energy truncation by kcal/mol", default = 4)
-    parser.add_argument("-i", type = str, metavar = "<filename>", help = "Input dihedral angle data file", default = "")
-    parser.add_argument("-o", type = str, metavar = "<filename>", help = "Cluster result output file", default = "")
-    parser.add_argument("--cluster", action = "store_true", help = "Run clustering algorithm")
-    parser.add_argument("--sidechain", action = "store_true", help = "Consider sidechain")
-    parser.add_argument("--show", action = "store_true", help = "Visualize cluster result" )
-    parser.add_argument("--stg", action = "store_true", help = "Show state density graph")
+    parser.add_argument("-n", type = int, metavar = "N", help = "Number of amino acids.", default = -1)
+    parser.add_argument("-s", type = str, metavar = "S", help = "Amino acid sequence.", default = "Unknown")
+    parser.add_argument("-e", type = float, metavar = "E", help = "Energy truncation by kcal/mol.", default = 15)
+    parser.add_argument("-ncfm", type = int, metavar = "N", help = "Number of selected conformations. This term's priority lower than energy truncation.", default = maxsize)
+    parser.add_argument("-i", type = str, metavar = "<filename>", help = "Input dihedral angle data file.", default = "")
+    parser.add_argument("-o", type = str, metavar = "<filename>", help = "Cluster result output file.", default = "")
+    parser.add_argument("--cluster", action = "store_true", help = "Run clustering algorithm.")
+    parser.add_argument("-clustermethod", type = str, metavar = "S", help = "Clustering algorithm used, default: birch.", default = "birch")
+    parser.add_argument("--sidechain", action = "store_true", help = "Consider sidechain.")
+    parser.add_argument("--split", action = "store_true", help = "Split clusters by main dihedral.")
+    parser.add_argument("-splitthreshold", type = float, metavar = "DEG", help = "Split distance threshold, default: 90°.", default = 90)
+    parser.add_argument("--show", action = "store_true", help = "Visualize cluster result." )
+    parser.add_argument("--stg", action = "store_true", help = "Show state density graph.")
     args = parser.parse_args()
+
+
     main(args)
+    
+    
